@@ -2,9 +2,9 @@ const restify = require('restify');
 const express = require('express');
 const builder = require('botbuilder');
 const botbuilder_azure = require("botbuilder-azure");
-
 const sql = require('mssql')
 
+var { messages } = require('./server/messages/messages')
 var {
     luisAPIKey,
     luisAppId,
@@ -50,35 +50,44 @@ var tableStorage = new botbuilder_azure.AzureBotStorage({ gzipData: false }, azu
 // Create your bot with a function to receive messages from the user
 // This default message handler is invoked if the user's utterance doesn't
 // match any intents handled by other dialogs.
-// var bot = new builder.UniversalBot(connector, (session, args) => {
-//     session.send('hi User, I am a repair shop assistant')
-//     session.send('I can tell you about the mttf for each component coming-in for repair')
-//     session.send('I know about 10k components consumed as part of various repair orders')
-//     session.send('you can tell me a component that you are interested in or you can start typing and select one as we go along')
 
-//     console.log(session.library)
-//     // If the object for storing notes in session.userData doesn't exist yet, initialize it
-//     // if (!session.userData.notes) {
-//     //     session.userData.notes = {};
-//     //     console.log("initializing userData.notes in default message handler");
-//     // }
-// });
+var bot = new builder.UniversalBot(connector, (session, args) => {
+    sql.connect(sqlDbConfig, err => {
+        // Stored Procedure
+        new sql.Request()
+            .input('@type', sql.VarChar)
+            .input('@component', sql.VarChar)
+            .execute('usp_Mttf_Paretochart', (err, result) => {
+                // ... error checks
 
-var bot = new builder.UniversalBot(connector, function (session, args) {
+                console.log(result)
+            })
+    })
+
+    sql.on('error', err => {
+        // ... error handler
+    })
+
     session.send('You reached the default message handler. You said \'%s\'.', session.message.text);
+    // If the object for storing notes in session.userData doesn't exist yet, initialize it
+    // if (!session.userData.notes) {
+    //     session.userData.notes = {};
+    //     console.log("initializing userData.notes in default message handler");
+    // }
 });
 
 bot.set('storage', tableStorage);
 
-// Hook into the conversationUpdate event and check when the bot is added
-// for more visit https://stackoverflow.com/questions/43048088/microsoft-bot-framework-sending-message-on-connect/43050305#43050305
+// Bot introduces itself and says hello upon conversation start
+// for more visit here https://tutorials.botsfloor.com/lets-make-a-chatbot-microsoft-bot-framework-node-js-7da211149c2f
 bot.on('conversationUpdate', (message) => {
-    if (message.membersAdded) {
-        message.membersAdded.forEach((identity) => {
-            if (identity.id === message.address.bot.id) {
-                bot.beginDialog(message.address, '/');
-            }
-        });
+    if (message.membersAdded[0].id === message.address.bot.id) {
+        messages.map((data, index) => {
+            var reply = new builder.Message()
+                .address(message.address)
+                .text(data.message)
+            bot.send(reply);
+        })
     }
 });
 
@@ -127,29 +136,6 @@ bot.dialog('mttf symptom',
     (session) => {
         session.send('You reached the mttf intent. You said \'%s\'.', session.message.text);
         // console.log(session.message)
-
-        (async () => {
-            try {
-                let pool = await sql.connect(sqlDbConfig)
-                // query
-                // let result1 = await pool.request()
-                //     .input('input_parameter', sql.Int, value)
-                //     .query('select * from mytable where id = @input_parameter')                                
-
-                // Stored procedure
-                let storedProcedure = await pool.request()
-                    .input('@type', sql.VarChar)
-                    .input('@component', sql.VarChar)
-
-                    // .output('output_parameter', sql.VarChar(50))
-                    .execute('usp_Mttf_Paretochart')
-
-                console.dir(storedProcedure)
-            } catch (err) {
-                // ... error checks
-            }
-        })()
-
         session.endDialog();
     }
 ).triggerAction({

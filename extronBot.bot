@@ -1,0 +1,18 @@
+{
+    "name": "extronBot",
+    "description": "",
+    "services": [
+        {
+            "type": "endpoint",
+            "appId": "404ce0ad-d5de-4a89-9db8-5ff9ed7c77c3",
+            "appPassword": "VvxIEzpIP8Fs1NWNWQg8mg==!7usDTc0cKI9/yGVguxorPVuWmbvcDmk/Aq424hV8QYI=",
+            "endpoint": "http://localhost:3978/api/messages",
+            "id": "b7aa8c20-e34b-11e8-9f43-49a14fbc12c8",
+            "name": "http://localhost:3978/api/messages"
+        }
+    ],
+    "padlock": "3CtADOJYiufD64lVxJDsOg==!uOngKciz/Cc0MO2gSuxNOjMCRXS8szeKKozrvWM0kM3lmjKUfDd4gDXH6f3USJXS",
+    "version": "2.0",
+    "overrides": null,
+    "path": "D:\\WorkPlace\\extronbot-src\\extronBot.bot"
+}

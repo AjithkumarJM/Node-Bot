@@ -20,8 +20,12 @@ var openIdMetadata = process.env.BotOpenIdMetadata;
 var sqlDbConfig = {
     user: 'extron',
     password: 'machinelearning@2018',
-    server: 'extronforecast.database.windows.net',
-    database: 'MachineLearningMS'
+    server: 'extronforecast.database.windows.net',   
+    port: 1433, 
+    database: "MachineLearningMS",
+    options: {
+       encrypt: true,
+    }
 };
 
 module.exports = {

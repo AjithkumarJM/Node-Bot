@@ -5,14 +5,14 @@
         {
             "type": "endpoint",
             "appId": "404ce0ad-d5de-4a89-9db8-5ff9ed7c77c3",
-            "appPassword": "3cZa2lcq1CMkl6yaUsYwKw==!Gyk6MtKrP+G9wRdaGYKxJwxf2of4qPXs31mrooIdjOw=",
+            "appPassword": "3vVvDog60BhZTknngMaI4w==!5smO8V5Nz3+jh36hH6aAApUNDa/hmJAE2aTooNCXGGQ=",
             "endpoint": "http://localhost:3978/api/messages",
-            "id": "263eee50-f3ec-11e8-bdd2-8d345519ca75",
+            "id": "9bf7a1b0-f46d-11e8-86fb-4f019702fe1a",
             "name": "http://localhost:3978/api/messages"
         }
     ],
-    "padlock": "Akk0ZAZu031cFOCOlHuXNw==!HCYwwGRactlEe5BDiPTI/kGn0esIx+cx/pKYHhtnj62+FsIozWtlS83GdAiGW6Bd",
+    "padlock": "YOZHlVF33W25uyB84Oj0wQ==!/ELnOWGxeSSmovBq2/Nj3BpX9w2Oz7c7DtGrO1ENkAuiNWAlIa7Rc+ZwXSzGGjXi",
     "version": "2.0",
     "overrides": null,
-    "path": "C:\\Workspace\\Node-Bot\\extronBot.bot"
+    "path": "D:\\WorkPlace\\extron-node-bot\\extronBot.bot"
 }

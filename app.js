@@ -2,9 +2,9 @@ const restify = require('restify');
 const express = require('express');
 const builder = require('botbuilder');
 const botbuilder_azure = require("botbuilder-azure");
-const sql = require('mssql')
+const sql = require('mssql');
 
-var { messages } = require('./server/messages/messages')
+var { messages, buttonData } = require('./server/messages/messages');
 var {
     luisAPIKey,
     luisAppId,
@@ -52,21 +52,6 @@ var tableStorage = new botbuilder_azure.AzureBotStorage({ gzipData: false }, azu
 // match any intents handled by other dialogs.
 
 var bot = new builder.UniversalBot(connector, (session, args) => {
-    sql.connect(sqlDbConfig, err => {
-        // Stored Procedure
-        new sql.Request()
-            .input('@type', sql.VarChar)
-            .input('@component', sql.VarChar)
-            .execute('usp_Mttf_Paretochart', (err, result) => {
-                // ... error checks
-
-                console.log(result)
-            })
-    })
-
-    sql.on('error', err => {
-        // ... error handler
-    })
 
     session.send('You reached the default message handler. You said \'%s\'.', session.message.text);
     // If the object for storing notes in session.userData doesn't exist yet, initialize it
@@ -82,25 +67,73 @@ bot.set('storage', tableStorage);
 // for more visit here https://tutorials.botsfloor.com/lets-make-a-chatbot-microsoft-bot-framework-node-js-7da211149c2f
 bot.on('conversationUpdate', (message) => {
     if (message.membersAdded[0].id === message.address.bot.id) {
-        messages.map((data, index) => {
-            var reply = new builder.Message()
-                .address(message.address)
-                .text(data.message)
-            bot.send(reply);
+        var initialMessage = new builder.Message()
+            .address(message.address)
+            .text("hi User, I am a repair shop assistant")
+        bot.send(initialMessage);
+
+        var reply1 = new builder.Message()
+            .address(message.address)
+            .text('I can tell you about the mttf for each component coming-in for repair')
+        bot.send(reply1);
+
+        // query to the database and get the records
+        sql.connect(sqlDbConfig, (err) => {
+            if (err) console.log(err);
+            var request = new sql.Request();
+            request.execute('usp_Total_Component', (err, response) => {
+                let components = response.recordset[0].Total;
+                if (err) console.log(err)
+
+                var totalComponent = new builder.Message()
+                    .address(message.address)
+                    .text(`I know about ${components > 999 ? (components / 1000).toFixed(1) + 'k' : components} components consumed as part of various repair orders`)
+                bot.send(totalComponent);
+
+                if (message.attachments && message.attachments.length === 0) {
+                    request.execute('usp_List_Component', (err, response) => {
+                        if (err) console.log(err);
+                        console.log(response)
+                        var attachmentMessage = new builder.Message()
+                            .address(message.address)
+                            .text('I can tell you about the mttf for each component coming-in for repair')
+                            .addAttachment(
+                                {
+                                    contentType: "application/json",
+                                    content: {
+                                        type: "typeAhead",
+                                        payload: {
+                                            data: response.recordset,
+                                            message: "Unable to find response.",
+                                        },
+                                    }
+                                }
+                            )
+
+                        bot.send(attachmentMessage);
+                        sql.close();
+                    })
+                }
+                else {
+                    var attachmentMessage = new builder.Message()
+                        .address(message.address)
+                        .text('Oops something went wrong.')
+
+                    bot.send(attachmentMessage)
+                }
+            })
         })
     }
 });
 
-// Make sure you add code to validate these fields
-// var luisAppId = process.env.LuisAppId || luisAppId;
-// var luisAPIKey = process.env.LuisAPIKey || luisAPIKey;
-// var luisAPIHostName = process.env.LuisAPIHostName || 'westus.api.cognitive.microsoft.com';
-
+// luis interface
 const LuisModelUrl = 'https://' + luisAPIHostName + '/luis/v2.0/apps/' + luisAppId + '?subscription-key=' + luisAPIKey;
 
 // Create a recognizer that gets intents from LUIS, and add it to the bot
 var recognizer = new builder.LuisRecognizer(LuisModelUrl);
 bot.recognizer(recognizer);
+
+var componentName;
 
 // Add a dialog for each intent that the LUIS app recognizes.
 // See https://docs.microsoft.com/en-us/bot-framework/nodejs/bot-builder-nodejs-recognize-intent-luis 
@@ -116,7 +149,41 @@ bot.dialog('GreetingDialog',
 
 bot.dialog('HelpDialog',
     (session) => {
-        session.send('You reached the Help intent. You said \'%s\'.', session.message.text);
+        componentName = session.message.text;
+        sql.connect(sqlDbConfig, (err) => {
+            if (err) console.log(err);
+            new sql.Request()
+                .input('component', sql.VarChar, session.message.text)
+                .execute('usp_MTTF_Data', (err, response) => {
+                    if (err) console.log(err);
+                    console.log(response)
+                    // session.send('You reached the Help intent. You said \'%s\'.', session.message.text);
+                    session.send(`Found the component ${session.message.text} in a total of ${response.recordset[0].Repair_Orders} repair orders in the past ${response.recordset[0].Months} months.`);
+                    session.send(`The  mean time to failure for this component is ${response.recordset[0].MTTF} months.`);
+                    session.send(`Are you interested to know more about the repair orders featuring this component?`);
+                    var msg = session.message;
+                    if (msg.attachments && msg.attachments.length === 0) {
+                        session.send({
+                            text: "Things like ",
+                            attachments: [
+                                {
+                                    contentType: "application/json",
+                                    content: {
+                                        type: "button",
+                                        payload: {
+                                            data: buttonData
+                                        }
+                                    }
+                                }
+                            ]
+                        });
+                    } else {
+                        // Echo back users text
+                        session.send("Oops something went wrong");
+                    }
+                    sql.close();
+                })
+        })
         session.endDialog();
     }
 ).triggerAction({
@@ -134,8 +201,56 @@ bot.dialog('CancelDialog',
 
 bot.dialog('mttf symptom',
     (session) => {
-        session.send('You reached the mttf intent. You said \'%s\'.', session.message.text);
-        // console.log(session.message)
+        // session.send('You reached the mttf intent. You said \'%s\'.', session.message.text);
+        sql.connect(sqlDbConfig, (err) => {
+            // let { cause, mean, numberOfFailures, percentage } = []
+            let cause = [];
+            let mean = [];
+            let numberOfFailures = [];
+            let percentage = [];
+
+            if (err) console.log(err);
+            new sql.Request()
+                .input('type', sql.VarChar, session.message.text)
+                .input('component', sql.VarChar, componentName)
+                .execute('USP_MTTF_PARETOCHART', (err, response) => {
+                    if (err) console.log(err);
+                    console.log(response)
+                    response.recordset.map((data, index) => {
+                        cause.push(data.Cause);
+                        mean.push(data.Mean);
+                        numberOfFailures.push(data.No_Of_Failure);
+                        percentage.push(data.Percent_Of_Total);
+                    })
+                    var msg = session.message;
+                    if (msg.attachments && msg.attachments.length === 0) {
+                        session.send({
+                            text: `showing the results for ${session.message.text}`,
+                            attachments: [
+                                {
+                                    contentType: "application/json",
+                                    content: {
+                                        type: "paretoChart",
+                                        payload: {
+                                            data: {
+                                                cause,
+                                                mean,
+                                                numberOfFailures,
+                                                percentage
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        });                        
+                    } else {
+                        // Echo back users text
+                        session.send("Oops something went wrong");
+                    }
+                    sql.close();
+                    // session.send('You reached the Help intent. You said \'%s\'.', session.message.text);                    
+                })
+        })
         session.endDialog();
     }
 ).triggerAction({

@@ -16,6 +16,7 @@ var {
     appPassword,
     openIdMetadata
 } = require('./server/config/config');
+const { getNoInputSP, getMultipleInputSP } = require('./server/db/queryModels');
 
 // var server = restify.createServer();
 var server = express();
@@ -43,8 +44,13 @@ server.post('/api/messages', connector.listen());
 * ---------------------------------------------------------------------------------------- */
 
 var tableName = 'botdata';
+
+// for local env
 var azureTableClient = new botbuilder_azure.AzureTableClient(tableName, process.env.AzureWebJobsStorage || storageName, process.env.AzureTableKey || storageKey); //process.env['AzureWebJobsStorage']
+
+// for prod env
 // var azureTableClient = new botbuilder_azure.AzureTableClient(tableName, process.env['AzureWebJobsStorage']);
+
 var tableStorage = new botbuilder_azure.AzureBotStorage({ gzipData: false }, azureTableClient);
 
 // Create your bot with a function to receive messages from the user
@@ -53,7 +59,9 @@ var tableStorage = new botbuilder_azure.AzureBotStorage({ gzipData: false }, azu
 
 var bot = new builder.UniversalBot(connector, (session, args) => {
 
-    session.send('You reached the default message handler. You said \'%s\'.', session.message.text);
+    // session.send('You reached the default message handler. You said \'%s\'.', session.message.text);
+    session.send('Hello!  how can i help you')
+
     // If the object for storing notes in session.userData doesn't exist yet, initialize it
     // if (!session.userData.notes) {
     //     session.userData.notes = {};
@@ -66,37 +74,35 @@ bot.set('storage', tableStorage);
 // Bot introduces itself and says hello upon conversation start
 // for more visit here https://tutorials.botsfloor.com/lets-make-a-chatbot-microsoft-bot-framework-node-js-7da211149c2f
 bot.on('conversationUpdate', (message) => {
+
     if (message.membersAdded[0].id === message.address.bot.id) {
-        var initialMessage = new builder.Message()
-            .address(message.address)
-            .text("hi User, I am a repair shop assistant")
-        bot.send(initialMessage);
+        if (message.membersAdded) {
+            message.membersAdded.forEach((identity) => {
+                if (identity.id === message.address.bot.id) {
+                    var initialMessage = new builder.Message()
+                        .address(message.address)
+                        .text("hi, I am a repair shop assistant")
+                    bot.send(initialMessage);
 
-        var reply1 = new builder.Message()
-            .address(message.address)
-            .text('I can tell you about the mttf for each component coming-in for repair')
-        bot.send(reply1);
-
-        // query to the database and get the records
-        sql.connect(sqlDbConfig, (err) => {
-            if (err) console.log(err);
-            var request = new sql.Request();
-            request.execute('usp_Total_Component', (err, response) => {
-                let components = response.recordset[0].Total;
-                if (err) console.log(err)
-
-                var totalComponent = new builder.Message()
-                    .address(message.address)
-                    .text(`I know about ${components > 999 ? (components / 1000).toFixed(1) + 'k' : components} components consumed as part of various repair orders`)
-                bot.send(totalComponent);
-
-                if (message.attachments && message.attachments.length === 0) {
-                    request.execute('usp_List_Component', (err, response) => {
-                        if (err) console.log(err);
-                        console.log(response)
-                        var attachmentMessage = new builder.Message()
+                    setTimeout(() => {
+                        var greetingMessage = new builder.Message()
                             .address(message.address)
                             .text('I can tell you about the mttf for each component coming-in for repair')
+                        bot.send(greetingMessage);
+                    }, 1500);
+
+                    getNoInputSP('usp_Total_Component', (response) => {                        
+                        let components = response.recordset[0].Total;
+                        var totalComponent = new builder.Message()
+                            .address(message.address)
+                            .text(`I know about ${components > 999 ? (components / 1000).toFixed(1) + 'k' : components} components consumed as part of various repair orders`)
+                        bot.send(totalComponent);
+                    });
+
+                    getNoInputSP('usp_List_Component', (response) => {
+                        var attachmentMessage = new builder.Message()
+                            .address(message.address)
+                            .text('you can tell me a component that you are interested in or you can start typing and select one as we go along')
                             .addAttachment(
                                 {
                                     contentType: "application/json",
@@ -111,18 +117,10 @@ bot.on('conversationUpdate', (message) => {
                             )
 
                         bot.send(attachmentMessage);
-                        sql.close();
-                    })
+                    });
                 }
-                else {
-                    var attachmentMessage = new builder.Message()
-                        .address(message.address)
-                        .text('Oops something went wrong.')
-
-                    bot.send(attachmentMessage)
-                }
-            })
-        })
+            });
+        }
     }
 });
 
@@ -139,6 +137,7 @@ var componentName;
 // See https://docs.microsoft.com/en-us/bot-framework/nodejs/bot-builder-nodejs-recognize-intent-luis 
 bot.dialog('GreetingDialog',
     (session) => {
+        console.log(session, 'session');
         // session.send('You reached the Greeting intent. You said \'%s\'.', session.message.text);
         session.send('Hello!  how can i help you')
         session.endDialog();
@@ -158,30 +157,42 @@ bot.dialog('HelpDialog',
                     if (err) console.log(err);
                     console.log(response)
                     // session.send('You reached the Help intent. You said \'%s\'.', session.message.text);
-                    session.send(`Found the component ${session.message.text} in a total of ${response.recordset[0].Repair_Orders} repair orders in the past ${response.recordset[0].Months} months.`);
-                    session.send(`The  mean time to failure for this component is ${response.recordset[0].MTTF} months.`);
-                    session.send(`Are you interested to know more about the repair orders featuring this component?`);
-                    var msg = session.message;
-                    if (msg.attachments && msg.attachments.length === 0) {
-                        session.send({
-                            text: "Things like ",
-                            attachments: [
-                                {
-                                    contentType: "application/json",
-                                    content: {
-                                        type: "button",
-                                        payload: {
-                                            data: buttonData
+                    if (response.recordset[0].MTTF !== null) {
+                        session.send(`Found the component ${session.message.text} in a total of ${response.recordset[0].Repair_Orders} repair orders in the past ${response.recordset[0].Months} months.`);
+                        setTimeout(() => {
+                            session.send(`The  mean time to failure for this component is ${response.recordset[0].MTTF} months.`);
+                        }, 1500);
+
+                        setTimeout(() => {
+                            session.send(`Are you interested to know more about the repair orders featuring this component?`);
+                        }, 2000);
+
+                        var msg = session.message;
+                        if (msg.attachments && msg.attachments.length === 0) {
+                            setTimeout(() => {
+                                session.send({
+                                    text: "",
+                                    attachments: [
+                                        {
+                                            contentType: "application/json",
+                                            content: {
+                                                type: "button",
+                                                payload: {
+                                                    data: buttonData,
+                                                    message: "Things like"
+
+                                                },
+                                            }
                                         }
-                                    }
-                                }
-                            ]
-                        });
-                    } else {
-                        // Echo back users text
-                        session.send("Oops something went wrong");
+                                    ]
+                                });
+                            }, 3000);
+                        } else {
+                            // Echo back users text
+                            session.send("Oops something went wrong");
+                        }
+                        sql.close();
                     }
-                    sql.close();
                 })
         })
         session.endDialog();
@@ -202,47 +213,68 @@ bot.dialog('CancelDialog',
 bot.dialog('mttf symptom',
     (session) => {
         // session.send('You reached the mttf intent. You said \'%s\'.', session.message.text);
+        let cause = [];
+        let mean = [];
+        let numberOfFailures = [];
+        let percentage = [];
+
         sql.connect(sqlDbConfig, (err) => {
-            // let { cause, mean, numberOfFailures, percentage } = []
-            let cause = [];
-            let mean = [];
-            let numberOfFailures = [];
-            let percentage = [];
 
             if (err) console.log(err);
+
             new sql.Request()
                 .input('type', sql.VarChar, session.message.text)
                 .input('component', sql.VarChar, componentName)
                 .execute('USP_MTTF_PARETOCHART', (err, response) => {
                     if (err) console.log(err);
-                    console.log(response)
-                    response.recordset.map((data, index) => {
-                        cause.push(data.Cause);
-                        mean.push(data.Mean);
-                        numberOfFailures.push(data.No_Of_Failure);
-                        percentage.push(data.Percent_Of_Total);
-                    })
+
                     var msg = session.message;
-                    if (msg.attachments && msg.attachments.length === 0) {
+                    if (msg.attachments && msg.attachments.length === 0 && response.recordset !== undefined) {
+                        response.recordset.map((data, index) => {
+                            cause.push(data.Cause);
+                            mean.push(data.Mean);
+                            numberOfFailures.push(data.No_Of_Failure);
+                            percentage.push(data.Percent_Of_Total);
+                        })
                         session.send({
-                            text: `showing the results for ${session.message.text}`,
+                            text: ``,
                             attachments: [
                                 {
                                     contentType: "application/json",
                                     content: {
-                                        type: "paretoChart",
+                                        type: "chart",
+                                        chartType: "pareto",
                                         payload: {
                                             data: {
                                                 cause,
                                                 mean,
                                                 numberOfFailures,
                                                 percentage
-                                            }
-                                        }
+                                            },
+                                            message: `showing the results for ${session.message.text}`
+                                        },
                                     }
                                 }
                             ]
-                        });                        
+                        });
+
+                        setTimeout(() => {
+                            bot.send({
+                                text: "",
+                                attachments: [
+                                    {
+                                        contentType: "application/json",
+                                        content: {
+                                            type: "button",
+                                            payload: {
+                                                data: buttonData,
+                                                message: "Things like"
+                                            },
+                                        }
+                                    }
+                                ]
+                            })
+                        }, 1500);
                     } else {
                         // Echo back users text
                         session.send("Oops something went wrong");

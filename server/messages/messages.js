@@ -19,13 +19,19 @@ var messages = [
 
 var buttonData = [
     {
-        buttonName: 'Failure Symptoms'
+        label: 'Failure Symptoms',
+        value: 'Failure Symptoms'
     },
     {
-        buttonName: 'Reason For Failure'
+        label: 'Reason For Failure',
+        value: 'Reason For Failure'
     },
     {
-        buttonName: 'Country the component was shipped to?'
+        label: 'Country the component was shipped to?',
+        value: 'Country the component was shipped to?'
+    }, {
+        label: 'Cause for failure',
+        value: 'Cause for failure'
     }
 ]
 
